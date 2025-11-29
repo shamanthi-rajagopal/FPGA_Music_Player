@@ -1,0 +1,9 @@
+16:21:44 **** Incremental Build of configuration Nios II for project BoardDiagnostics ****
+make all 
+Info: Building ../BoardDiagnostics_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../BoardDiagnostics_bsp/
+[BSP build complete]
+[BoardDiagnostics build complete]
+
+16:21:45 Build Finished (took 586ms)
+

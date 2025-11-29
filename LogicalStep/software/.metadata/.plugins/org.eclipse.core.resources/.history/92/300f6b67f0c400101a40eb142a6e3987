@@ -1,0 +1,62 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <unistd.h>
+
+
+#include <system.h>
+#include <sys/alt_alarm.h>
+#include <io.h>
+
+#include "fatfs.h"
+#include "diskio.h"
+
+#include "ff.h"
+#include "monitor.h"
+#include "uart.h"
+
+#include "alt_types.h"
+
+#include <altera_up_avalon_audio.h>
+#include <altera_up_avalon_audio_and_video_config.h>
+
+
+#include "sys/alt_stdio.h"
+
+// GLOBAL VARIABLES THAT WE CREATED
+
+	const int MAX_TRACKS = 17;
+	char trackList[17][64] = {0};
+	char trackSize[17][64] = {0};
+	int totalTracks = 0;
+	int trackPtr = 0;
+
+//read file list and load tracks/size into track list/size
+void readSD(){
+
+}
+
+
+//maybe do interrupt based approach for the push buttons
+
+int main()
+{
+
+
+
+/*FP CODE*/
+	alt_up_audio_dev * audio_dev;
+/* used for audio record/playback */
+FIL File1, File2;
+FIL *fp = &File1;     // file opened earlier using "fo" command
+FRESULT result;
+unsigned int bytesRead;
+unsigned char buffer[512];     // temporary buffer
+unsigned int l_buf;
+unsigned int r_buf;
+int switch_state = (IORD(SWITCH_PIO_BASE, 0)) & 0x01; //SW0
+int switch_state2 = (IORD(SWITCH_PIO_BASE, 0) >> 1) & 0x01; //SW1
+
+  return 0;
+}

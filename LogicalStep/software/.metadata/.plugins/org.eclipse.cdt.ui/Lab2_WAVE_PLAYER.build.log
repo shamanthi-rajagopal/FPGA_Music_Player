@@ -1,0 +1,50 @@
+00:54:13 **** Incremental Build of configuration Nios II for project Lab2_WAVE_PLAYER ****
+make all 
+Info: Building ../Lab2_WAVE_PLAYER_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../Lab2_WAVE_PLAYER_bsp/
+[BSP build complete]
+Info: Compiling hello_world.c to obj/default/hello_world.o
+nios2-elf-gcc -xc -MP -MMD -c -I../Lab2_WAVE_PLAYER_bsp//HAL/inc -I../Lab2_WAVE_PLAYER_bsp/ -I../Lab2_WAVE_PLAYER_bsp//drivers/inc  -pipe -D__hal__ -DALT_NO_INSTRUCTION_EMULATION -DALT_SINGLE_THREADED -DALTERA_AVALON_JTAG_UART_SMALL    -O0 -g -Wall   -mno-hw-div -mhw-mul -mno-hw-mulx -mgpopt=global  -o obj/default/hello_world.o hello_world.c
+hello_world.c: In function 'initialize_and_read_files':
+hello_world.c:160:13: warning: comparison between 'FRESULT {aka enum <anonymous>}' and 'enum <anonymous>' [-Wenum-compare]
+     if (res != RES_OK) {
+             ^
+hello_world.c:208:16: warning: format '%s' expects argument of type 'char *', but argument 4 has type 'uint32_t {aka long unsigned int}' [-Wformat=]
+         printf("%d: %s, Size: %s bytes\n", i + 1, trackList[i], trackSize[i]);
+                ^
+hello_world.c:208:16: warning: format '%s' expects argument of type 'char *', but argument 4 has type 'uint32_t {aka long unsigned int}' [-Wformat=]
+hello_world.c:153:18: warning: unused variable 'p2' [-Wunused-variable]
+     uint32_t p1, p2;
+                  ^
+hello_world.c:153:14: warning: unused variable 'p1' [-Wunused-variable]
+     uint32_t p1, p2;
+              ^
+hello_world.c: In function 'main':
+hello_world.c:377:55: warning: passing argument 4 of 'f_read' from incompatible pointer type [-Wincompatible-pointer-types]
+       result = f_read(&File1, buffer, sizeof(buffer), &bytesRead);
+                                                       ^
+In file included from fatfs.h:43:0,
+                 from hello_world.c:12:
+ff.h:207:9: note: expected 'uint32_t * {aka long unsigned int *}' but argument is of type 'unsigned int *'
+ FRESULT f_read (FIL*, void*, uint32_t, uint32_t*);          /* Read data from a file */
+         ^
+hello_world.c:274:18: warning: unused variable 'r_buf' [-Wunused-variable]
+     unsigned int r_buf;
+                  ^
+hello_world.c:273:18: warning: unused variable 'l_buf' [-Wunused-variable]
+     unsigned int l_buf;
+                  ^
+hello_world.c:259:9: warning: unused variable 'Buff' [-Wunused-variable]
+ uint8_t Buff[8192] __attribute__ ((aligned(4)));  /* Working buffer */ // working buffer for set up with no user command
+         ^
+Info: Linking Lab2_WAVE_PLAYER.elf
+nios2-elf-g++  -T'../Lab2_WAVE_PLAYER_bsp//linker.x' -msys-crt0='../Lab2_WAVE_PLAYER_bsp//obj/HAL/src/crt0.o' -msys-lib=hal_bsp -L../Lab2_WAVE_PLAYER_bsp/   -Wl,-Map=Lab2_WAVE_PLAYER.map   -O0 -g -Wall   -mno-hw-div -mhw-mul -mno-hw-mulx -mgpopt=global  -o Lab2_WAVE_PLAYER.elf obj/default/fatfs.o obj/default/fatfs_diskio.o obj/default/fatfs_nios2_de0_nano_spi.o obj/default/fatfs_nios2_de1_pio.o obj/default/fatfs_nios2_de1_spi.o obj/default/ff.o obj/default/hello_world.o obj/default/monitor.o obj/default/uart_nios2.o -lm -msys-lib=m
+nios2-elf-insert Lab2_WAVE_PLAYER.elf --thread_model hal --cpu_name nios2_gen2_0 --qsys true --simulation_enabled false --id 0 --sidp 0x1001158 --timestamp 1757964929 --stderr_dev jtag_uart_0 --stdin_dev jtag_uart_0 --stdout_dev jtag_uart_0 --sopc_system_name QD1 --quartus_project_dir "C:/Users/m25yu/ECE-224/LogicalStep" --jdi ../..//output_files/LogicalStep_top.jdi --sopcinfo C:/Users/m25yu/ECE-224/LogicalStep/software/Lab2_WAVE_PLAYER_bsp/../../QD1.sopcinfo
+Info: (Lab2_WAVE_PLAYER.elf) 118 KBytes program size (code + initialized data).
+Info:                        8070 KBytes free for stack + heap.
+Info: Creating Lab2_WAVE_PLAYER.objdump
+nios2-elf-objdump --disassemble --syms --all-header --source Lab2_WAVE_PLAYER.elf >Lab2_WAVE_PLAYER.objdump
+[Lab2_WAVE_PLAYER build complete]
+
+00:54:14 Build Finished (took 1s.251ms)
+

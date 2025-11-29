@@ -1,0 +1,62 @@
+16:47:56 **** Incremental Build of configuration Nios II for project Lab_0_Post_Lab ****
+make all 
+Info: Building ../Lab_0_Post_Lab_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../Lab_0_Post_Lab_bsp/
+[BSP build complete]
+[Lab_0_Post_Lab build complete]
+16:48:03 **** Build of configuration Nios II for project Lab_0_Post_Lab ****
+make all 
+Info: Building ../Lab_0_Post_Lab_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../Lab_0_Post_Lab_bsp/
+[BSP build complete]
+[Lab_0_Post_Lab build complete]
+16:48:04 **** Incremental Build of configuration Nios II for project Lab_0_Post_Lab ****
+make all 
+Info: Building ../Lab_0_Post_Lab_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../Lab_0_Post_Lab_bsp/
+[BSP build complete]
+[Lab_0_Post_Lab build complete]
+16:48:13 **** Incremental Build of configuration Nios II for project Lab_0_Post_Lab ****
+make all 
+Info: Building ../Lab_0_Post_Lab_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../Lab_0_Post_Lab_bsp/
+[BSP build complete]
+[Lab_0_Post_Lab build complete]
+16:48:55 **** Incremental Build of configuration Nios II for project Lab_0_Post_Lab ****
+make all 
+Info: Building ../Lab_0_Post_Lab_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../Lab_0_Post_Lab_bsp/
+[BSP build complete]
+Info: Compiling hello_world.c to obj/default/hello_world.o
+nios2-elf-gcc -xc -MP -MMD -c -I../Lab_0_Post_Lab_bsp//HAL/inc -I../Lab_0_Post_Lab_bsp/ -I../Lab_0_Post_Lab_bsp//drivers/inc  -pipe -D__hal__ -DALT_NO_INSTRUCTION_EMULATION -DALT_SINGLE_THREADED    -O0 -g -Wall   -mno-hw-div -mhw-mul -mno-hw-mulx -mgpopt=global  -o obj/default/hello_world.o hello_world.c
+hello_world.c: In function 'main':
+hello_world.c:30:2: warning: implicit declaration of function 'get_button_push' [-Wimplicit-function-declaration]
+  get_button_push(buttons);
+  ^
+Info: Linking Lab_0_Post_Lab.elf
+nios2-elf-g++  -T'../Lab_0_Post_Lab_bsp//linker.x' -msys-crt0='../Lab_0_Post_Lab_bsp//obj/HAL/src/crt0.o' -msys-lib=hal_bsp -L../Lab_0_Post_Lab_bsp/   -Wl,-Map=Lab_0_Post_Lab.map   -O0 -g -Wall   -mno-hw-div -mhw-mul -mno-hw-mulx -mgpopt=global  -o Lab_0_Post_Lab.elf obj/default/hello_world.o -lm -msys-lib=m
+obj/default/hello_world.o: In function `main':
+C:\Users\m25yu\ECE-224\LogicalStep\software\Lab_0_Post_Lab/hello_world.c:30: undefined reference to `get_button_push'
+collect2.exe: error: ld returned 1 exit status
+make: *** [Lab_0_Post_Lab.elf] Error 1
+16:49:03 **** Incremental Build of configuration Nios II for project Lab_0_Post_Lab ****
+make all 
+Info: Building ../Lab_0_Post_Lab_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../Lab_0_Post_Lab_bsp/
+[BSP build complete]
+Info: Compiling hello_world.c to obj/default/hello_world.o
+nios2-elf-gcc -xc -MP -MMD -c -I../Lab_0_Post_Lab_bsp//HAL/inc -I../Lab_0_Post_Lab_bsp/ -I../Lab_0_Post_Lab_bsp//drivers/inc  -pipe -D__hal__ -DALT_NO_INSTRUCTION_EMULATION -DALT_SINGLE_THREADED    -O0 -g -Wall   -mno-hw-div -mhw-mul -mno-hw-mulx -mgpopt=global  -o obj/default/hello_world.o hello_world.c
+Info: Linking Lab_0_Post_Lab.elf
+nios2-elf-g++  -T'../Lab_0_Post_Lab_bsp//linker.x' -msys-crt0='../Lab_0_Post_Lab_bsp//obj/HAL/src/crt0.o' -msys-lib=hal_bsp -L../Lab_0_Post_Lab_bsp/   -Wl,-Map=Lab_0_Post_Lab.map   -O0 -g -Wall   -mno-hw-div -mhw-mul -mno-hw-mulx -mgpopt=global  -o Lab_0_Post_Lab.elf obj/default/hello_world.o -lm -msys-lib=m
+nios2-elf-insert Lab_0_Post_Lab.elf --thread_model hal --cpu_name nios2_gen2_0 --qsys true --simulation_enabled false --id 0 --sidp 0x1001158 --timestamp 1757964929 --stderr_dev jtag_uart_0 --stdin_dev jtag_uart_0 --stdout_dev jtag_uart_0 --sopc_system_name QD1 --quartus_project_dir "C:/Users/m25yu/ECE-224/LogicalStep" --jdi ../..//output_files/LogicalStep_top.jdi --sopcinfo C:/Users/m25yu/ECE-224/LogicalStep/software/Lab_0_Post_Lab_bsp/../../QD1.sopcinfo
+Info: (Lab_0_Post_Lab.elf) 36 KBytes program size (code + initialized data).
+Info:                      8148 KBytes free for stack + heap.
+Info: Creating Lab_0_Post_Lab.objdump
+nios2-elf-objdump --disassemble --syms --all-header --source Lab_0_Post_Lab.elf >Lab_0_Post_Lab.objdump
+[Lab_0_Post_Lab build complete]
+16:49:51 **** Incremental Build of configuration Nios II for project Lab_0_Post_Lab ****
+make all 
+Info: Building ../Lab_0_Post_Lab_bsp/
+C:/software/Altera/18.1/nios2eds/bin/gnu/H-x86_64-mingw32/bin/make --no-print-directory -C ../Lab_0_Post_Lab_bsp/
+[BSP build complete]
+[Lab_0_Post_Lab build complete]

@@ -1,0 +1,95 @@
+
+#include <stdio.h>
+#include "sys/alt_irq.h"
+#include "system.h"
+#include "altera_avalon_pio_regs.h"
+
+volatile int flag = 0;
+int x = 10;
+int background(){
+	int j;
+//int x = 0;
+	int grainsize = 4;
+	int g_taskProcessed = 0;
+
+	for(j = 0; j < grainsize; j++)
+	{
+		g_taskProcessed++;
+	}
+	return g_taskProcessed;
+}
+
+static void EGM_ISR(void* context, alt_u32 id){
+	// Set the response to 1 then 0
+	IOWR(RESPONSE_OUT_BASE, 0, 1);
+	IOWR(RESPONSE_OUT_BASE, 0, RESPONSE_OUT_RESET_VALUE);
+	IOWR(STIMULUS_IN_BASE, 3, 0x0); 						// clear interrupt source
+
+}
+
+void print_results(){
+	// Print needed values
+	int missed_pulses = IORD(EGM_BASE, 5);
+	int multi_pulses  = IORD(EGM_BASE, 6);
+	int avg_latency   = IORD(EGM_BASE, 4);
+	printf("%d %d %d\n", missed_pulses, multi_pulses, avg_latency);
+}
+
+int main() {
+
+
+
+  //check which mode to run
+  int status = IORD(EGM_BASE, 1);
+  int switch_state = (IORD(SWITCH_PIO_BASE, 0)) & 0x01;  // Read switch 0 --> for interrupt
+  int switch_state2 = (IORD(SWITCH_PIO_BASE, 0) >> 1) & 0x01;  // Read switch 1 --> for tight polling
+  int pushBut0 = (IORD(BUTTON_PIO_BASE, 0)) & 0x01;
+  //while push button 0 is not pressed
+
+  switch_state = (IORD(SWITCH_PIO_BASE, 0)) & 0x01;  // Read switch 0 --> for interrupt
+	switch_state2 = (IORD(SWITCH_PIO_BASE, 0) >> 1) & 0x01;  // Read switch 1 --> for tight polling
+	  if(switch_state){
+		  printf("Interrupt mode selected\n");
+	  }else if(switch_state2){
+		  printf("Polling mode selected\n");
+	  }
+	  printf("Period, Pulse_Width, BG_Task Run, Latency, Missed, Multiple\nPlease, press PB0 to continue.\n");
+	  while(pushBut0 == 1){
+		  pushBut0 = (IORD(BUTTON_PIO_BASE, 0)) & 0x01;
+	  }
+
+
+  if (switch_state){
+	  	  // setup interrupt
+	  	  IOWR(STIMULUS_IN_BASE, 3, 0x1);
+	  	  IOWR(STIMULUS_IN_BASE, 2, 0x1);
+	  	  alt_irq_register( STIMULUS_IN_IRQ, (void*)0, EGM_ISR);
+
+  }else if(switch_state2){
+	  // insert polling function
+  }
+	  	  /*Set up EGM*/
+	      IOWR(EGM_BASE, 2, 1000);
+	      IOWR(EGM_BASE, 3, 500);
+	      IOWR(EGM_BASE, 0, 1);
+
+	 	  printf("Status: %d\n", status);
+	 	  status = IORD(EGM_BASE, 1); // check busy bit for updates
+
+	 	  while(status ==1){ // when it is busy, check background tasks
+	 		  x = background();
+	 		  status = IORD(EGM_BASE, 1); // check busy bit for updates
+	 	   }
+
+	 	  printf("Background task: %d\n", x);
+
+	 	  printf("Switch state: %d \n", switch_state);
+	 	  printf("Switch state2: %d \n", switch_state2);
+	 	  print_results();
+	 	  // reset enable
+	 	  IORD(STIMULUS_IN_BASE, 0);
+	 	  IOWR(EGM_BASE, 0, 0);
+
+  return 0;
+}
+

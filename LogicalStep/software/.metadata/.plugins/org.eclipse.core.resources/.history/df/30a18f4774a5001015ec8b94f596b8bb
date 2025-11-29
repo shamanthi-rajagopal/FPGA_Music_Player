@@ -1,0 +1,205 @@
+
+#include <stdio.h>
+#include "sys/alt_irq.h"
+#include "system.h"
+#include "altera_avalon_pio_regs.h"
+
+
+// global variables
+int period = 1000;
+int pulse_width = 500;
+int BG_Task = 0;
+
+int background(){
+	int j;
+	int grainsize = 4;
+	int g_taskProcessed = 0;
+
+	for(j = 0; j < grainsize; j++)
+	{
+		g_taskProcessed++;
+	}
+
+	return g_taskProcessed;
+}
+
+static void EGM_ISR(void* context, alt_u32 id){
+	// Set the response to 1 then 0
+	IOWR(RESPONSE_OUT_BASE, 0, 1);
+	IOWR(RESPONSE_OUT_BASE, 0, RESPONSE_OUT_RESET_VALUE);
+	IOWR(STIMULUS_IN_BASE, 3, 0x0); 						// clear interrupt source
+
+
+}
+void print_results(){
+	// Print needed values
+	int missed_pulses = IORD(EGM_BASE, 5);
+	int multi_pulses  = IORD(EGM_BASE, 6);
+	int avg_latency   = IORD(EGM_BASE, 4);
+	printf("%d, %d, %d, %d, %d, %d \n", period, pulse_width, BG_Task, avg_latency, missed_pulses, multi_pulses);
+}
+
+static void run_interrupt_mode(){
+	// setup interrupt
+	IOWR(STIMULUS_IN_BASE, 3, 0x1);
+	IOWR(STIMULUS_IN_BASE, 2, 0x1);
+	alt_irq_register( STIMULUS_IN_IRQ, (void*)0, EGM_ISR);
+
+
+	/*Set up EGM*/
+	IOWR(EGM_BASE, 2, period);
+	IOWR(EGM_BASE, 3, pulse_width);
+	IOWR(EGM_BASE, 0, 1);
+
+	int status = IORD(EGM_BASE, 1); // check busy bit for updates
+
+	while(status ==1){ // when it is busy, check background tasks
+		background();
+		BG_Task++;
+		status = IORD(EGM_BASE, 1); // check busy bit for updates
+	}
+
+	print_results();
+
+	// reset enable
+	IORD(STIMULUS_IN_BASE, 0);
+	IOWR(EGM_BASE, 0, 0);
+
+
+}
+
+static void run_tight_polling_mode(){
+	// insert polling function
+	//How it works:
+	//run a characterization cycle which is just tight polling until we see the first stimulus pulse
+	//then after we see the pulse, call the background taskAfter each background task, it polls again to see if another stimulus pulse has occurred.
+	//This continues until a new stimulus pulse is detected. For example, if it managed to call 3 background tasks
+	//before seeing the next pulse, it concludes that 3 background tasks is the safe number.
+
+	//we must figure out how many times the background task can run before a new signal appears so keep count
+	int backgroundCounter = 0;
+	int backLow = 0;
+	int rawStimulus = 0;
+	int acknowledgeStim = 0;
+	int secondPulse = 0;
+
+	/*Set up EGM*/
+	IOWR(EGM_BASE, 2, period);
+	IOWR(EGM_BASE, 3, pulse_width);
+	IOWR(EGM_BASE, 0, 1);
+
+
+	//printf("enabled? %d \n", (IORD(EGM_BASE, 0) & 0x1));
+	//This while loop acts as the first run of the stimulus, we use this to determine
+	//how many background tasks can run safely
+
+
+
+	while(1){
+	background();
+
+	if(backgroundCounter == 0){
+		IOWR(LED_PIO_BASE,0,0x0); // turn off flag
+	}
+	BG_Task++;
+	backgroundCounter++;
+	//printf("counter: %d\n", backgroundCounter);
+	rawStimulus = IORD(STIMULUS_IN_BASE, 0) & 0x1;
+
+	//theres a new pulse
+
+	if(rawStimulus == 1 && backLow == 0){
+		//printf("stimulus: %d\n", rawStimulus);
+		//printf("Characterization complete. backgroundCounter = %d\n", backgroundCounter);
+		if(secondPulse == 1){
+			break;
+		}
+		secondPulse++;
+	}
+	backLow = rawStimulus;
+	}
+
+	backLow = 0;
+	//printf("enabled2? %d \n", (IORD(EGM_BASE, 0) & 0x1));
+	//while the egm is running, check if the raw stimulus data has a new signal, if not, keep polling
+	while(IORD(EGM_BASE, 1)==1){
+
+		int rawStimulus = IORD(STIMULUS_IN_BASE, 0) & 0x1;
+		//printf("stimulus: %d\n", rawStimulus);
+		//theres a new pulse so respond to it
+		if(rawStimulus == 0){
+			acknowledgeStim = 0;
+		}
+
+		if(rawStimulus == 1 && backLow == 0 &&!acknowledgeStim){
+			IOWR(RESPONSE_OUT_BASE, 0, 1);
+			IOWR(RESPONSE_OUT_BASE, 0, RESPONSE_OUT_RESET_VALUE);
+			IOWR(STIMULUS_IN_BASE, 3, 0x0); //clear stimulus
+			acknowledgeStim = 1;
+				}
+
+		//the safe amount of background tasks is one minus the backgroundCounter
+		for(int i = 0; i<backgroundCounter-1; i++){
+			background();
+			BG_Task++;
+		}
+
+			backLow = rawStimulus;
+	}
+
+		print_results();
+
+		// reset enable
+		IORD(STIMULUS_IN_BASE, 0);
+		IOWR(EGM_BASE, 0, 0);
+
+}
+
+
+
+
+int main() {
+	// Turn on LED FLAG for the signal tap logic analyzer
+	IOWR(LED_PIO_BASE,0,0x1);
+	int prev_button = 0;
+
+
+
+  while(1){
+	  int pushBut0 = (IORD(BUTTON_PIO_BASE, 0)) & 0x01;
+	BG_Task = 0;
+	  //check which mode to run
+	   int status = IORD(EGM_BASE, 1);
+	   int switch_state = (IORD(SWITCH_PIO_BASE, 0)) & 0x01;  // Read switch 0 --> for interrupt
+	   int switch_state2 = (IORD(SWITCH_PIO_BASE, 0) >> 1) & 0x01;  // Read switch 1 --> for tight polling
+	   //while push button 0 is not pressed
+
+
+	  if(pushBut0 && !prev_button){
+
+		  if(switch_state){
+				  printf("Interrupt mode selected\n");
+
+		  }else if(switch_state2){
+				  printf("Polling mode selected\n");
+		  }
+		  printf("Period, Pulse_Width, BG_Task Run, Latency, Missed, Multiple.\n");
+		  printf("Please press PB0 to continue.\n");
+	  }
+
+	  if(!pushBut0 && prev_button){
+		  if(switch_state2){
+			  run_tight_polling_mode();
+		  }
+		  /*INTERRUPT*/
+		  else if (switch_state){
+			  run_interrupt_mode();
+
+		  }
+
+	}
+	  prev_button = pushBut0;
+  }
+  return 0;
+}
+

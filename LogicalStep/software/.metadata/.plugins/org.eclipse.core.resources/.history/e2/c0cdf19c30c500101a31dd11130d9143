@@ -1,0 +1,484 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <unistd.h>
+
+
+#include <system.h>
+#include <sys/alt_alarm.h>
+#include <io.h>
+
+#include "fatfs.h"
+#include "diskio.h"
+
+#include "ff.h"
+#include "monitor.h"
+#include "uart.h"
+
+#include "alt_types.h"
+#include "altera_avalon_pio_regs.h"
+#include "sys/alt_irq.h"
+#include <altera_up_avalon_audio.h>
+#include <altera_up_avalon_audio_and_video_config.h>
+
+
+#include "sys/alt_stdio.h"
+
+// GLOBAL VARIABLES THAT WE CREATED
+
+	const int MAX_TRACKS = 14;
+	char trackList[14][64] = {0};
+	char trackSize[14][64] = {0};
+	int totalTracks = 0;
+	volatile int trackPtr = 0;
+	volatile int is_playing = 0;
+	int stop = 0;
+	volatile int state; // 0 - skip, 1 - pause/play, 2 - stop, 3 - prev
+	static alt_u32 lastPb1 = 0;
+	static alt_u32 lastPb2 = 0;
+	static alt_u32 lastPb3 = 0;
+	static alt_u32 lastPb4 = 0;
+
+	// needed for timer function but not sure what that needed for...
+	static alt_alarm alarm1;
+	static unsigned long Systick = 0;
+	static volatile unsigned short Timer;   /* 1000Hz increment timer */
+
+
+//interrupt handler
+	static void buttonHandler(void * context, alt_u32 id){
+		printf("Button interrupt triggered!\n");
+		alt_u32 now = Systick;
+		alt_u32 button_edge = IORD(BUTTON_PIO_BASE, 3);
+		//skip button pb0
+		if ((button_edge & 0x01) && ((now - lastPb1) > 50)) {
+			is_playing = 0;
+			state = 1;
+		    lastPb1 = now;
+		    printf("made state %d and isPlaying %d!\n", state, is_playing);
+		}
+		//pause/play pb 1
+		if ((button_edge & 0x02) && ((now - lastPb2) > 50)) {
+			if(is_playing){
+				is_playing = 0;
+
+			}else{
+				is_playing = 1;
+			}
+			state = 1;
+			lastPb2 = now;
+			printf("made state %d and isPlaying %d!\n", state, is_playing);
+		}
+		//stop pb 2
+		if ((button_edge & 0x04) && ((now - lastPb3) > 50)) {
+			is_playing = 0;
+			stop = 1;
+			state = 2;
+			lastPb3 = now;
+			printf("made state %d and isPlaying %d!\n", state, is_playing);
+		}
+		//prev track pb 3
+		if ((button_edge & 0x08) && ((now - lastPb4) > 50)) {
+			is_playing = 0;
+			state = 3;
+			lastPb4 = now;
+			printf("made state %d and isPlaying %d!\n", state, is_playing);
+		}
+		IOWR(BUTTON_PIO_BASE, 3, 0x0); //clear edge capture register
+	}
+
+
+
+static alt_u32 TimerFunction (void *context)
+	{
+	   static unsigned short wTimer10ms = 0;
+
+	   (void)context;
+
+	   Systick++;
+	   wTimer10ms++;
+	   Timer++; /* Performance counter for this module */
+
+	   if (wTimer10ms == 10)
+	   {
+	      wTimer10ms = 0;
+	      ffs_DiskIOTimerproc();  /* Drive timer procedure of low level disk I/O module */
+	   }
+
+	  return(1);
+	}
+
+// function to initialize disk
+static void IoInit(void)
+	{
+
+
+	   uart0_init(115200);
+
+	   /* Init diskio interface */
+	   ffs_DiskIOInit();
+
+	   //SetHighSpeed();
+
+	   /* Init timer system */
+	   alt_alarm_start(&alarm1, 1, &TimerFunction, NULL);
+
+	}
+
+void initialize_and_read_files() {
+    uint8_t drv = 0;
+    uint32_t p1, p2;
+    FRESULT res;
+
+    // Initialize Disk (di 0)
+    printf("Initializing disk...\n");
+    res = disk_initialize(drv);
+
+    if (res != RES_OK) {
+        printf("Disk initialization failed with error code: %d\n", res);
+        return;
+    }
+
+    printf("Disk initialized successfully\n");
+
+    // Force Mount Logical Drive (fi 0)
+    FATFS Fatfs[1];
+    res = f_mount(drv, &Fatfs[drv]);
+
+    if (res != FR_OK) {
+        printf("Failed to mount the file system with error code: %d\n", res);
+        return;
+    }
+
+    printf("File system mounted successfully\n");
+
+    // list and store files from SD ( fl )
+    DIR Dir;
+    FILINFO Finfo;
+    res = f_opendir(&Dir, "/");  // Open root directory
+
+    if (res != FR_OK) {
+        printf("Failed to open directory with error code: %d\n", res);
+        return;
+    }
+
+    totalTracks = 0;
+
+    while (1) {
+        res = f_readdir(&Dir, &Finfo);  // Read directory entry
+
+        if (res != FR_OK || Finfo.fname[0] == '\0')  // No more files
+            break;
+
+        // Only add .WAV files to trackList
+        if (strstr(Finfo.fname, ".WAV")) {
+            if (totalTracks < MAX_TRACKS) {
+                strcpy(trackList[totalTracks], Finfo.fname);  // Store filename
+                sprintf(trackSize[totalTracks], "%lu", Finfo.fsize);  // Store file size
+                totalTracks++;
+            }
+        }
+    }
+    printf("Found %d tracks:\n", totalTracks);
+
+    for (int i = 0; i < totalTracks; i++) {
+        printf("%d: %s, Size: %s bytes\n", i + 1, trackList[i], trackSize[i]);
+    }
+}
+
+
+int debounceBut(int buttonMask){
+    static int count[4] = {0, 0, 0, 0};
+    static int lastCount[4] = {0, 0, 0, 0};  // Track previous count
+    int buttonIndex = 0;
+    int returnState = 0;
+
+    switch(buttonMask){
+        case 0x1:
+        	buttonIndex = 0;
+        	break;
+        case 0x2:
+        	buttonIndex = 1;
+        	break;
+        case 0x4:
+        	buttonIndex = 2;
+        	break;
+        case 0x8:
+        	buttonIndex = 3;
+        	break;
+    }
+
+    if((IORD(BUTTON_PIO_BASE, 0) & buttonMask) == 0){ // Button pressed
+        if(count[buttonIndex] < 13){
+            count[buttonIndex]++;
+        }
+
+        // Trigger when 13
+        if(count[buttonIndex] == 13 && lastCount[buttonIndex] == 12){
+            returnState = 1;
+            count[buttonIndex] = 0;
+            lastCount[buttonIndex] =0;
+        }
+
+        lastCount[buttonIndex] = count[buttonIndex];
+    }else{ // Button released
+        count[buttonIndex] = 0;
+        lastCount[buttonIndex] = 0;
+    }
+
+    //printf("Button %d - State: %d, Count: %d\n",buttonIndex, returnState, count[buttonIndex]);
+
+    return returnState;
+}
+
+void play_track(int track_index) { // add logic from part 2 where play and switch modes are working
+
+
+
+    alt_up_audio_dev *audio_dev;
+
+    audio_dev = alt_up_audio_open_dev("/dev/Audio");
+    printf("1\n");
+    /*if (audio_dev == NULL)
+        alt_printf("Error: could not open audio device \n");
+    else
+        //alt_printf("Opened audio device \n");*/
+
+    FIL File1;
+    FRESULT result;
+    FATFS Fatfs;
+    result = f_mount(&Fatfs, "");
+    unsigned int bytesRead;
+    unsigned char buffer[512];     // temporary buffer
+    unsigned int l_buf;
+    unsigned int r_buf;
+    printf("2\n");
+    // Use the correct string for opening the file
+    char *current_file = trackList[track_index];  // Correcting this line
+    result = f_open(&File1, current_file, FA_READ); // file opened => add error check if needed => I THINK FA_READ IS WRONG IDK HOW TO FIX...
+
+    if (result != FR_OK) {
+        printf("Error opening file %s\n", current_file);
+        return;  // Stop execution if file cannot be opened
+    }
+
+    // 0 0 - normal speed
+    // 0 1 - half speed
+    // 1 0 - double speed
+    // 1 1 - normal speed mono
+    printf("Playing Track: %s\n", trackList[track_index]);
+    int switch_state = (IORD(SWITCH_PIO_BASE, 0)) & 0x01; //SW0
+    int switch_state2 = (IORD(SWITCH_PIO_BASE, 0) >> 1) & 0x01; //SW1
+
+    int isMono = 0;
+    int speedSetting = 0;
+
+    if (switch_state2 == 0) {
+        if (switch_state == 0) {
+            // MONO
+            speedSetting = 4;
+            isMono = 1;
+        } else {
+            // DOUBLE SPEED
+            speedSetting = 8;
+        }
+    } else {
+        if (switch_state == 0) {
+            // HALF SPEED
+            speedSetting = 2;
+            //printf("double state\n");
+        } else {
+            // NORMAL
+            speedSetting = 4;
+        }
+    }
+    printf("3\n");
+    // open the Audio port
+    // We only open the audio device once, no need to open it again
+    // audio_dev = alt_up_audio_open_dev("/dev/Audio");
+    if (audio_dev == NULL){
+        alt_printf("Error: could not open audio device \n");
+    }
+        //alt_printf("Opened audio device \n");
+
+    /* read and echo audio data */
+    state  =1;
+    int i = 0;
+    while (1) {
+    	//printf("state %d\n", state);
+        result = f_read(&File1, buffer, sizeof(buffer), &bytesRead);
+        // stop reading if result is not ok or we are no longer reading bytes
+        if (result != FR_OK ) {
+        	printf("result not ok\n");
+            break;
+        }
+
+
+
+            // We can obtain playback of mono sound by either writing the same data to both FIFOs, or by writing zeroes to one of the channels.
+            // from https://sites.ualberta.ca/~delliott/ece492/appnotes/2013w/audio_altera_university_ip_cores/
+
+            //stop, pause, and play is done here
+            if(state == 3){ //stop the track and reset to start of track
+            	//reset i and set pointer to the beginning
+            	i = 0;
+            	f_lseek(&File1, 0);
+            	writeToLCD(trackPtr, state);
+            	state = 1;
+            	printf("while 1\n");
+
+            }
+            if(is_playing == 1){
+            	if(state == 1){ //pause the current track
+            		printf("play\n");
+            		 for ( i = 0; i < bytesRead; i += speedSetting) {
+            		            // little endian
+            		            unsigned int left = (buffer[i + 1] << 8) | buffer[i];
+            		            unsigned int right = (buffer[i + 3] << 8) | buffer[i + 2];
+            		if (isMono == 0) {
+            		printf("not mono\n");
+            		// alt_up_audio_write_fifo_space returns num of free slots in the left channel
+            		   while (alt_up_audio_write_fifo_space(audio_dev, ALT_UP_AUDIO_LEFT) == 0) {} // while fifo is full, do nothing
+            		   alt_up_audio_write_fifo(audio_dev, &left, 1, ALT_UP_AUDIO_LEFT); // writes one sample to the left fifo
+            		   // returns num of free slots in the right channel
+            		   while (alt_up_audio_write_fifo_space(audio_dev, ALT_UP_AUDIO_RIGHT) == 0) {} // while fifo is full, do nothing
+            		   alt_up_audio_write_fifo(audio_dev, &right, 1, ALT_UP_AUDIO_RIGHT); // writes one sample to right fifo
+            		} else if (isMono == 1) {
+            		   printf("mono\n");
+            		   // for mono, only play on the left channel
+            		   while (alt_up_audio_write_fifo_space(audio_dev, ALT_UP_AUDIO_LEFT) == 0) {} // while fifo is full, do nothing
+            		   alt_up_audio_write_fifo(audio_dev, &left, 1, ALT_UP_AUDIO_LEFT); // writes one sample to the left fifo
+            		   // unsigned int silence = 0;
+            		   while (alt_up_audio_write_fifo_space(audio_dev, ALT_UP_AUDIO_RIGHT) == 0) {} // while fifo is full, do nothing
+            		   alt_up_audio_write_fifo(audio_dev, &left, 1, ALT_UP_AUDIO_RIGHT); // writes one sample to right fifo
+            		}
+            		 }
+            	}
+            }else{
+            	if(state == 0){ //skip to next track
+            		printf("skip track\n");
+            		unsigned char buffer[512];
+            		trackPtr = (trackPtr+1) % MAX_TRACKS;
+            		writeToLCD(trackPtr, state);
+            		current_file = trackList[track_index];  // Correcting this line
+            		result = f_open(&File1, current_file, FA_READ);
+            		result = f_read(&File1, buffer, sizeof(buffer), &bytesRead);
+            	}
+            	else if (state == 3){
+            		printf("prev track \n");
+            		unsigned char buffer[512];
+            		trackPtr = (trackPtr-1 +MAX_TRACKS) % MAX_TRACKS;
+            		writeToLCD(trackPtr, state);
+            		current_file = trackList[track_index];  // Correcting this line
+            		result = f_open(&File1, current_file, FA_READ);
+            		result = f_read(&File1, buffer, sizeof(buffer), &bytesRead);
+            	}
+
+            if(state == 1){ //pause state
+            	//do nothing
+            	//printf("pause\n");
+            	writeToLCD(trackPtr, state);
+            }
+            }
+
+    }
+    f_close(&File1);
+}
+
+
+
+void pause_track() {
+	printf("Track Paused\n");
+}
+
+void writeToLCD(int trackPtr, int state){
+	 FILE *lcd = fopen("/dev/lcd_display", "w");
+
+	 if (lcd != NULL) {
+		 fprintf(lcd, "\x1b[2J");  // Clear LCD
+	     fprintf(lcd, "%s - Track %d\n", trackList[trackPtr], trackPtr);  // Display current track
+	     if(is_playing){
+			 if(state == 1){
+				 fprintf(lcd, "Play Mode");
+			 }
+	     }else{
+	    	 if(state == 1){
+	    		 fprintf(lcd, "Pause Mode");
+	    	 }else if(state == 2){
+	    		 fprintf(lcd, "Stop Mode");
+	    	 }
+	     }
+
+	     fclose(lcd);
+	 }
+}
+
+//maybe do interrupt based approach for the push buttons
+
+int main()
+{
+
+// Needed Variables for set up
+alt_up_audio_dev * audio_dev;
+/* used for audio record/playback */
+FIL File1, File2;
+FIL *fp = &File1;     // file opened earlier using "fo" command
+FRESULT result;
+
+uint8_t Buff[8192] __attribute__ ((aligned(4)));  /* Working buffer */ // working buffer for set up with no user command
+
+unsigned int bytesRead;
+unsigned char buffer[512];     // temporary buffer
+unsigned int l_buf;
+unsigned int r_buf;
+int switch_state = (IORD(SWITCH_PIO_BASE, 0)) & 0x01; //SW0
+int switch_state2 = (IORD(SWITCH_PIO_BASE, 0) >> 1) & 0x01; //SW1
+// initialize interrupt
+//IOWR(BUTTON_PIO_BASE, 3, 0x0);
+IOWR(BUTTON_PIO_BASE, 2, 0x0F);
+alt_irq_register( BUTTON_PIO_IRQ, NULL, buttonHandler);
+// Set up
+IoInit(); // initialize board
+initialize_and_read_files(); // initialize and read/store
+play_track(trackPtr);
+
+//while(1){
+//
+//usleep(5000);
+//
+//if(((IORD(BUTTON_PIO_BASE, 0) & 0x1) == 0)  && debounceBut(0x1) ){ //button 1 pressed
+////skip to next track
+//   trackPtr = (trackPtr + 1) % MAX_TRACKS;
+//   writeToLCD(trackPtr);
+//   printf("Track list: %s\n", trackList[trackPtr]);
+//
+//}else if(((IORD(BUTTON_PIO_BASE, 0) & 0x2) == 0) && debounceBut(0x2)){ //button 2 pressed
+//   // pause and play
+//
+//	if (is_playing == 0){ // means it is paused (should start paused default)
+//	    play_track(trackPtr);
+//
+//
+//	} else {
+//	    pause_track();
+//	    is_playing = 0;
+//	}
+//
+//}else if(((IORD(BUTTON_PIO_BASE, 0) & 0x4) == 0) && debounceBut(0x4)){ //button 3 pressed
+//   // stop
+//   printf("push button 3\n");
+// }else if(((IORD(BUTTON_PIO_BASE, 0) & 0x8) == 0) && debounceBut(0x8)){ //button 4 pressed
+//   //previous track
+//   trackPtr = (trackPtr - 1 + MAX_TRACKS) % MAX_TRACKS;
+//   writeToLCD(trackPtr);
+//   printf("Track list: %s\n", trackList[trackPtr]);
+//}
+//}
+
+
+
+
+
+  return 0;
+}

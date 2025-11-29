@@ -1,0 +1,193 @@
+
+#include <stdio.h>
+#include "sys/alt_irq.h"
+#include "system.h"
+#include "altera_avalon_pio_regs.h"
+
+
+// global variables
+const int period = 500;
+int pulse_width = period/2;
+int BG_Task = 0;
+
+int background(){
+	IOWR(LED_PIO_BASE,0,0x1); //led[0]
+	int j;
+	//int x = 0;
+	int grainsize = 4;
+	int g_taskProcessed = 0;
+
+	for(j = 0; j < grainsize; j++)
+	{
+		g_taskProcessed++;
+	}
+	IOWR(LED_PIO_BASE,0,0x0);//turn off
+	return g_taskProcessed;
+}
+
+static void EGM_ISR(void* context, alt_u32 id){
+	IOWR(LED_PIO_BASE, 0, 0x4); //led[3]
+	// Set the response to 1 then 0
+	IOWR(RESPONSE_OUT_BASE, 0, 1);
+	IOWR(RESPONSE_OUT_BASE, 0, RESPONSE_OUT_RESET_VALUE);
+	IOWR(STIMULUS_IN_BASE, 3, 0x0); 						// clear interrupt source
+	IOWR(LED_PIO_BASE,0,0x0); //turn off
+}
+
+void print_results(){
+	// Print needed values
+	int missed_pulses = IORD(EGM_BASE, 5);
+	int multi_pulses  = IORD(EGM_BASE, 6);
+	int avg_latency   = IORD(EGM_BASE, 4);
+	printf("%d, %d, %d, %d, %d, %d \n", period, pulse_width, BG_Task, avg_latency, missed_pulses, multi_pulses);
+}
+
+int main() {
+  //check which mode to run
+  int status = IORD(EGM_BASE, 1);
+  int switch_state = (IORD(SWITCH_PIO_BASE, 0)) & 0x01;  // Read switch 0 --> for interrupt
+  int switch_state2 = (IORD(SWITCH_PIO_BASE, 0) >> 1) & 0x01;  // Read switch 1 --> for tight polling
+  int pushBut0 = (IORD(BUTTON_PIO_BASE, 0)) & 0x01;
+  //while push button 0 is not pressed
+
+  switch_state = (IORD(SWITCH_PIO_BASE, 0)) & 0x01;  // Read switch 0 --> for interrupt // 1 --> for tight polling
+
+  if(switch_state==0){
+		  printf("Interrupt mode selected\n");
+  }else if(switch_state){
+		  printf("Polling mode selected\n");
+  }
+
+  	  printf("Period, Pulse_Width, BG_Task Run, Latency, Missed, Multiple\nPlease, press PB0 to continue.\n");
+
+  while(pushBut0 == 1){ // polling until PB0 is pressed
+		  pushBut0 = (IORD(BUTTON_PIO_BASE, 0)) & 0x01;
+  }
+
+  if(switch_state){
+	  // insert polling function
+	  	//How it works:
+	  	//run a characterization cycle which is just tight polling until we see the first stimulus pulse
+	  	//then after we see the pulse, call the background taskAfter each background task, it polls again to see if another stimulus pulse has occurred.
+	  	//This continues until a new stimulus pulse is detected. For example, if it managed to call 3 background tasks
+	  	//before seeing the next pulse, it concludes that 3 background tasks is the safe number.
+
+	  	//we must figure out how many times the background task can run before a new signal appears so keep count
+	  	int backgroundCounter = 0;
+	  	int backLow = 0;
+	  	int rawStimulus = 0;
+
+	  	//start program
+	  	  IOWR(LED_PIO_BASE, 0, 0x2); //led[1]
+	  	  IOWR(LED_PIO_BASE, 0, 0x0); //led[1] off
+	  	/*Set up EGM*/
+	  	IOWR(EGM_BASE, 2, period);
+	  	IOWR(EGM_BASE, 3, pulse_width);
+	  	IOWR(EGM_BASE, 0, 1);
+
+
+	  	//printf("enabled? %d \n", (IORD(EGM_BASE, 0) & 0x1));
+	  	//This while loop acts as the first run of the stimulus, we use this to determine
+	  	//how many background tasks can run safely
+
+	  	int i = 0;
+
+	  	while(1){
+	  		if(backgroundCounter == 0){
+	  			IOWR(LED_PIO_BASE,0,0x0); // turn off flag
+	  		}
+	  		if(i != 0){
+	  			background();
+	  			BG_Task++;
+	  			backgroundCounter++;
+	  		}
+	  		rawStimulus = IORD(STIMULUS_IN_BASE, 0) & 0x1;
+	  		//when rawStimulus is 1 and backLow is 0, we have a rising edge
+	  		if(rawStimulus == 1 && backLow == 0){
+
+	  			i++;
+	  			//once we see 2 rising edges, we stop the characterization loop
+	  			if(i ==2){
+	  				//printf("background count: %d\n", backgroundCounter);
+	  				break;
+	  			}else{
+	  				IOWR(RESPONSE_OUT_BASE, 0, 1);
+	  				IOWR(RESPONSE_OUT_BASE, 0, RESPONSE_OUT_RESET_VALUE);
+	  			}
+
+	  			backLow = 1;
+	  		}
+	  		if(rawStimulus == 0){
+	  			backLow = 0;
+	  		}
+
+	  	}
+	  	backLow = 0;
+	  	//printf("enabled2? %d \n", (IORD(EGM_BASE, 0) & 0x1));
+	  	//while the egm is running, check if the raw stimulus data has a new signal, if not, keep polling
+	  	while(IORD(EGM_BASE, 1)==1){
+
+	  		rawStimulus = IORD(STIMULUS_IN_BASE, 0) & 0x1;
+
+	  		//rising edge occurs
+	  		if(rawStimulus == 1 && backLow == 0){
+	  			IOWR(RESPONSE_OUT_BASE, 0, 1);
+	  			IOWR(RESPONSE_OUT_BASE, 0, RESPONSE_OUT_RESET_VALUE);
+	  			while((IORD(STIMULUS_IN_BASE, 0) & 0x1) == 1){
+	  			}
+	  			backLow = 0;
+	  		}else{
+	  			// we want the backgroundCounter - 1 because thats the
+	  			//most we can do without missing a pulse
+	  			for(int i = 0; i<backgroundCounter-1; i++){
+	  				background();
+	  				BG_Task++;
+	  			}
+	  		}
+	  		if (rawStimulus == 0) {
+	  		        backLow = 0;
+	  		    }
+
+
+
+
+	  	}
+
+	  		print_results();
+
+	  		// reset enable
+	  		IORD(STIMULUS_IN_BASE, 0);
+	  		IOWR(EGM_BASE, 0, 0);
+	 	 	  return 0;
+  }else if (switch_state==0){
+  	  // setup interrupt
+  	  IOWR(STIMULUS_IN_BASE, 3, 0x1);
+  	  IOWR(STIMULUS_IN_BASE, 2, 0x1);
+  	  alt_irq_register( STIMULUS_IN_IRQ, (void*)0, EGM_ISR);
+
+}
+  	  	  //start program
+    	IOWR(LED_PIO_BASE, 0, 0x2); //led[1]
+    	IOWR(LED_PIO_BASE, 0, 0x0); //led[1] off
+	  	  /*Set up EGM*/
+	      IOWR(EGM_BASE, 2, period);
+	      IOWR(EGM_BASE, 3, pulse_width);
+	      IOWR(EGM_BASE, 0, 1);
+
+	 	  status = IORD(EGM_BASE, 1); // check busy bit for updates
+
+	 	  while(status ==1){ // when it is busy, check background tasks
+	 		 background();
+	 		IOWR(LED_PIO_BASE,0,0x0);
+	 		 BG_Task++;
+	 		  status = IORD(EGM_BASE, 1); // check busy bit for updates
+	 	   }
+
+	 	  print_results();
+	 	  // reset enable
+	 	  IORD(STIMULUS_IN_BASE, 0);
+	 	  IOWR(EGM_BASE, 0, 0);
+
+  return 0;
+}
+

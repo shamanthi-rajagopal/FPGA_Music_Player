@@ -1,0 +1,68 @@
+#include <stdio.h>
+#include "sys/alt_irq.h"
+#include "system.h"
+#include "altera_avalon_pio_regs.h"
+
+static void EGM_ISR(void* context, alt_u32 id) {
+    // generate response pulse
+    IOWR(RESPONSE_OUT_BASE, 0, 1);
+    IOWR(RESPONSE_OUT_BASE, 0, 0);
+
+    // clear interrupt flag in edge capture reg
+    IOWR(STIMULUS_IN_BASE, 3, 0x1);
+}
+
+int background() {
+    int grainsize = 4;
+    int g_taskProcessed = 0;
+    for(int j = 0; j < grainsize; j++) {
+        g_taskProcessed++;
+    }
+    return g_taskProcessed;
+}
+
+int main(void) {
+    // --- check switches ---
+    int sw = IORD(SWITCH_PIO_BASE, 0);
+    int use_interrupt = sw & 0x1;
+    int use_polling   = (sw >> 1) & 0x1;
+
+    if (use_interrupt) {
+        // clear stale edge + enable mask
+        IOWR(STIMULUS_IN_BASE, 3, 0x1);
+        IOWR(STIMULUS_IN_BASE, 2, 0x1);
+        // register ISR
+        alt_irq_register(STIMULUS_IN_IRQ, NULL, EGM_ISR);
+    }
+
+    // --- start EGM ---
+    IOWR(EGM_BASE, 2, 1000);  // period
+    IOWR(EGM_BASE, 3, 500);   // pulse width
+    IOWR(EGM_BASE, 0, 1);     // enable/start
+
+    // --- run until Busy clears ---
+    while (IORD(EGM_BASE, 1) & 0x1) {
+        if (use_polling) {
+            static int last = 0;
+            int now = IORD(STIMULUS_IN_BASE, 0);
+            if (!last && now) {
+                IOWR(RESPONSE_OUT_BASE, 0, 1);
+                IOWR(RESPONSE_OUT_BASE, 0, 0);
+            }
+            last = now;
+        }
+        // always do background task
+        background();
+    }
+
+    // --- after run: print results ---
+    int missed = IORD(EGM_BASE, 5);
+    int multi  = IORD(EGM_BASE, 6);
+    int avg    = IORD(EGM_BASE, 4);
+    printf("Missed=%d Multi=%d AvgLatency=%d\n", missed, multi, avg);
+
+    // disable
+    IOWR(EGM_BASE, 0, 0);
+
+    return 0;
+}
